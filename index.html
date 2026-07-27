@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Mapa Komunitarioa</title>
+  <meta name="description" content="Mapa comunitario de recursos en Bizkaia" />
 
   <link
     rel="stylesheet"
@@ -14,44 +15,56 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>Mapa Komunitarioa</h1>
-    <p>Recursos comunitarios — búsqueda y filtros</p>
-  </header>
+  <main class="page">
+    <header class="hero">
+      <h1>Mapa Komunitarioa</h1>
+      <p>Explora recursos comunitarios y filtra por temática, población, tipo y zona.</p>
+    </header>
 
-  <main class="layout">
-    <aside class="sidebar">
-      <div class="control">
-        <label for="q">Buscar por título</label>
-        <input id="q" type="text" placeholder="Ej. Ayuntamiento de Durango" />
-      </div>
+    <section class="layout">
+      <aside class="panel" aria-label="Filtros de recursos">
+        <div class="panel-head">
+          <h2>Filtros</h2>
+          <p><strong id="count">0</strong> recursos visibles</p>
+        </div>
 
-      <div class="control">
-        <label for="tema">Temática</label>
-        <select id="tema"><option value="">Todas</option></select>
-      </div>
+        <div class="field">
+          <label for="q">Buscar por título</label>
+          <input id="q" type="search" placeholder="Ej. Ayuntamiento de Durango" />
+        </div>
 
-      <div class="control">
-        <label for="poblacion">Población diana</label>
-        <select id="poblacion"><option value="">Todas</option></select>
-      </div>
+        <div class="field">
+          <label for="tema">Temática</label>
+          <select id="tema"><option value="">Todas</option></select>
+        </div>
 
-      <div class="row">
-        <button id="reset">Limpiar filtros</button>
-      </div>
+        <div class="field">
+          <label for="poblacion">Población</label>
+          <select id="poblacion"><option value="">Todas</option></select>
+        </div>
 
-      <div class="stats">
-        <strong id="count">0</strong> recursos visibles
-      </div>
-    </aside>
+        <div class="field">
+          <label for="tipo">Tipo de recurso</label>
+          <select id="tipo"><option value="">Todos</option></select>
+        </div>
 
-    <section class="map-wrap">
-      <div id="map"></div>
+        <div class="field">
+          <label for="zona">Zona</label>
+          <select id="zona"><option value="">Todas</option></select>
+        </div>
 
-      <div id="legend" class="legend">
-        <h3>Tipo de recurso</h3>
-        <ul id="legend-items"></ul>
-      </div>
+        <button id="reset" type="button">Reiniciar filtros</button>
+
+        <section class="legend" aria-label="Leyenda por tipo de recurso">
+          <h3>Leyenda</h3>
+          <ul id="legend-items"></ul>
+        </section>
+      </aside>
+
+      <section class="map-shell" aria-label="Mapa de recursos">
+        <div id="map"></div>
+        <p id="status" class="status" aria-live="polite"></p>
+      </section>
     </section>
   </main>
 

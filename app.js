@@ -7,215 +7,272 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const qEl = document.getElementById('q');
 const temaEl = document.getElementById('tema');
-const zonaEl = document.getElementById('zona');
-const tipoEl = document.getElementById('tipo');
 const poblacionEl = document.getElementById('poblacion');
+const tipoEl = document.getElementById('tipo');
+const zonaEl = document.getElementById('zona');
 const resetEl = document.getElementById('reset');
 const countEl = document.getElementById('count');
 const legendItemsEl = document.getElementById('legend-items');
+const statusEl = document.getElementById('status');
 
 const markersLayer = L.layerGroup().addTo(map);
 
 let allRows = [];
-let rendered = [];
+let renderedMarkers = [];
 
+const palette = ['#1d4ed8', '#be123c', '#0f766e', '#7c3aed', '#c2410c', '#0369a1', '#3f6212', '#374151', '#7e22ce', '#15803d'];
 const colorByTipo = new Map();
-const palette = [
-  '#e11d48','#2563eb','#059669','#d97706','#7c3aed',
-  '#0ea5e9','#84cc16','#f97316','#14b8a6','#ef4444'
-];
 
 function parseJsonishArray(value) {
   if (!value) return [];
-  const v = String(value).trim();
+  const source = String(value).trim();
+  if (!source) return [];
+
   try {
-    const parsed = JSON.parse(v);
-    if (Array.isArray(parsed)) return parsed.map(x => String(x).trim()).filter(Boolean);
+    const parsed = JSON.parse(source);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item).trim()).filter(Boolean);
+    }
   } catch {}
-  return v
-    .replace(/^\[|\]$/g, '')
+
+  return source
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
     .split(',')
-    .map(s => s.replace(/^"+|"+$/g, '').trim())
+    .map((segment) => segment.trim().replace(/^"+|"+$/g, ''))
     .filter(Boolean);
 }
 
-function uniqueValues(rows, field) {
-  const set = new Set();
-  rows.forEach(r => parseJsonishArray(r[field]).forEach(v => set.add(v)));
-  return [...set].sort((a,b)=>a.localeCompare(b, 'es'));
+function uniqueValues(rows, fieldName) {
+  const values = new Set();
+  rows.forEach((row) => {
+    parseJsonishArray(row[fieldName]).forEach((item) => values.add(item));
+  });
+  return [...values].sort((a, b) => a.localeCompare(b, 'es'));
 }
 
-function fillSelect(select, values, firstLabel) {
-  if (!select) return;
-  select.innerHTML = `<option value="">${firstLabel}</option>`;
-  values.forEach(v => {
-    const o = document.createElement('option');
-    o.value = v;
-    o.textContent = v;
-    select.appendChild(o);
+function fillSelect(selectEl, values, firstLabel) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+
+  const firstOption = document.createElement('option');
+  firstOption.value = '';
+  firstOption.textContent = firstLabel;
+  selectEl.appendChild(firstOption);
+
+  values.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    selectEl.appendChild(option);
   });
 }
 
-function normalizeUrl(u) {
-  if (!u) return '';
-  const v = String(u).trim();
-  if (!v) return '';
-  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+function normalizeUrl(value) {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-function extractPointCoords(pointStr) {
-  if (!pointStr) return null;
-  const m = String(pointStr).match(/Point\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
-  if (!m) return null;
-  const lon = parseFloat(m[1]);
-  const lat = parseFloat(m[2]);
-  if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
-  return null;
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function extractPointCoords(pointValue) {
+  if (!pointValue) return null;
+  const match = String(pointValue).match(/Point\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
+  if (!match) return null;
+
+  const lon = Number.parseFloat(match[1]);
+  const lat = Number.parseFloat(match[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  return { lat, lon };
 }
 
 function extractCoordsFromDireccion(rawDireccion) {
   if (!rawDireccion) return null;
-  const v = String(rawDireccion).trim();
-  if (!v.startsWith('{')) return null;
+  const trimmed = String(rawDireccion).trim();
+  if (!trimmed.startsWith('{')) return null;
+
   try {
-    const obj = JSON.parse(v);
-    const lat = Number(obj?.Coordinates?.Latitude);
-    const lon = Number(obj?.Coordinates?.Longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
+    const parsed = JSON.parse(trimmed);
+    const lat = Number(parsed?.Coordinates?.Latitude);
+    const lon = Number(parsed?.Coordinates?.Longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return { lat, lon };
+    }
   } catch {}
+
   return null;
 }
 
-function chooseTipo(row) {
-  const tipos = parseJsonishArray(row['Tipo de recurso']);
-  return tipos[0] || 'Sin tipo';
-}
-
 function getTipoColor(tipo) {
-  if (!colorByTipo.has(tipo)) {
-    colorByTipo.set(tipo, palette[colorByTipo.size % palette.length]);
+  const key = tipo || 'Sin tipo';
+  if (!colorByTipo.has(key)) {
+    colorByTipo.set(key, palette[colorByTipo.size % palette.length]);
   }
-  return colorByTipo.get(tipo);
+  return colorByTipo.get(key);
 }
 
 function markerIcon(color) {
   return L.divIcon({
-    className: '',
-    html: `<span style="
-      display:inline-block;width:14px;height:14px;border-radius:50%;
-      background:${color};border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,.35);
-    "></span>`,
-    iconSize: [14,14],
-    iconAnchor: [7,7]
+    className: 'custom-marker',
+    html: `<span style="display:inline-block;width:14px;height:14px;border-radius:999px;background:${color};border:2px solid #ffffff;box-shadow:0 0 0 1px rgba(15,23,42,.35)"></span>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
   });
 }
 
-function popupHtml(r) {
-  const title = r['Título'] || '(Sin título)';
-  const actividad = r['Actividad'] || '';
-  const tel = r['Teléfono'] || '';
-  const email = r['e-mail'] || '';
-  const web = normalizeUrl(r['Web']);
-  const otros = r['Otros'] || '';
-  const tema = parseJsonishArray(r['Temática']).join(', ');
-  const zona = parseJsonishArray(r['Zona Accción']).join(', ');
-  const tipo = parseJsonishArray(r['Tipo de recurso']).join(', ');
-  const poblacion = parseJsonishArray(r['Población diana']).join(', ');
+function popupRow(label, value, format = 'text') {
+  if (!value) return '';
+
+  if (format === 'email') {
+    const escaped = escapeHtml(value);
+    return `<p class="popup-row"><strong>${label}:</strong> <a href="mailto:${escaped}">${escaped}</a></p>`;
+  }
+
+  if (format === 'web') {
+    const normalized = normalizeUrl(value);
+    if (!normalized) return '';
+    const escapedHref = escapeHtml(normalized);
+    const escapedLabel = escapeHtml(value);
+    return `<p class="popup-row"><strong>${label}:</strong> <a href="${escapedHref}" target="_blank" rel="noopener">${escapedLabel}</a></p>`;
+  }
+
+  if (format === 'long-text') {
+    return `<p class="popup-row"><strong>${label}:</strong> <em>${escapeHtml(value)}</em></p>`;
+  }
+
+  return `<p class="popup-row"><strong>${label}:</strong> ${escapeHtml(value)}</p>`;
+}
+
+function popupHtml(row) {
+  const title = row['Título'] || '(Sin título)';
+  const actividad = row['Actividad'] || '';
+  const tema = parseJsonishArray(row['Temática']).join(', ');
+  const zona = parseJsonishArray(row['Zona Accción']).join(', ');
+  const tipo = parseJsonishArray(row['Tipo de recurso']).join(', ');
+  const poblacion = parseJsonishArray(row['Población diana']).join(', ');
+  const telefono = row['Teléfono'] || '';
+  const email = row['e-mail'] || '';
+  const web = row['Web'] || '';
+  const otros = row['Otros'] || '';
 
   return `
-    <div class="popup">
+    <article class="popup-card">
       <h3>${escapeHtml(title)}</h3>
-      ${actividad ? `<p><strong>Actividad:</strong> ${escapeHtml(actividad)}</p>` : ''}
-      ${tema ? `<p><strong>Temática:</strong> ${escapeHtml(tema)}</p>` : ''}
-      ${zona ? `<p><strong>Zona:</strong> ${escapeHtml(zona)}</p>` : ''}
-      ${tipo ? `<p><strong>Tipo:</strong> ${escapeHtml(tipo)}</p>` : ''}
-      ${poblacion ? `<p><strong>Población:</strong> ${escapeHtml(poblacion)}</p>` : ''}
-      ${tel ? `<p><strong>Tel:</strong> ${escapeHtml(tel)}</p>` : ''}
-      ${email ? `<p><strong>Email:</strong> <a href="mailto:${escapeAttr(email)}">${escapeHtml(email)}</a></p>` : ''}
-      ${web ? `<p><strong>Web:</strong> <a href="${escapeAttr(web)}" target="_blank" rel="noopener">abrir</a></p>` : ''}
-      ${otros ? `<p><strong>Otros:</strong> ${escapeHtml(otros)}</p>` : ''}
-    </div>
+      <div class="popup-grid">
+        ${popupRow('Actividad', actividad)}
+        ${popupRow('Temática', tema)}
+        ${popupRow('Zona', zona)}
+        ${popupRow('Tipo', tipo)}
+        ${popupRow('Población', poblacion)}
+        ${popupRow('Teléfono', telefono)}
+        ${popupRow('Email', email, 'email')}
+        ${popupRow('Web', web, 'web')}
+        ${popupRow('Otros', otros, 'long-text')}
+      </div>
+    </article>
   `;
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'","&#39;");
-}
-function escapeAttr(s){ return escapeHtml(s); }
-
-function rowMatches(r) {
-  const q = qEl?.value?.trim().toLowerCase() || '';
+function rowMatches(row) {
+  const search = qEl?.value?.trim().toLowerCase() || '';
   const tema = temaEl?.value || '';
-  const zona = zonaEl?.value || '';
+  const poblacion = poblacionEl?.value || '';
   const tipo = tipoEl?.value || '';
-  const pobl = poblacionEl?.value || '';
+  const zona = zonaEl?.value || '';
 
-  if (q && !(r['Título'] || '').toLowerCase().includes(q)) return false;
+  if (search && !String(row['Título'] || '').toLowerCase().includes(search)) {
+    return false;
+  }
 
-  const temas = parseJsonishArray(r['Temática']);
-  const zonas = parseJsonishArray(r['Zona Accción']);
-  const tipos = parseJsonishArray(r['Tipo de recurso']);
-  const poblaciones = parseJsonishArray(r['Población diana']);
+  const temas = parseJsonishArray(row['Temática']);
+  const poblaciones = parseJsonishArray(row['Población diana']);
+  const tipos = parseJsonishArray(row['Tipo de recurso']);
+  const zonas = parseJsonishArray(row['Zona Accción']);
 
   if (tema && !temas.includes(tema)) return false;
-  if (zona && !zonas.includes(zona)) return false;
+  if (poblacion && !poblaciones.includes(poblacion)) return false;
   if (tipo && !tipos.includes(tipo)) return false;
-  if (pobl && !poblaciones.includes(pobl)) return false;
+  if (zona && !zonas.includes(zona)) return false;
 
   return true;
 }
 
 function renderLegend() {
   if (!legendItemsEl) return;
-  const tipos = uniqueValues(allRows, 'Tipo de recurso');
   legendItemsEl.innerHTML = '';
 
-  tipos.forEach(tipo => {
+  const tipos = uniqueValues(allRows, 'Tipo de recurso');
+  tipos.forEach((tipo) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="legend-dot" style="background:${getTipoColor(tipo)}"></span><span>${escapeHtml(tipo)}</span>`;
+    const dot = document.createElement('span');
+    dot.className = 'legend-dot';
+    dot.style.background = getTipoColor(tipo);
+
+    const text = document.createElement('span');
+    text.textContent = tipo;
+
+    li.appendChild(dot);
+    li.appendChild(text);
     legendItemsEl.appendChild(li);
   });
 }
 
 function render() {
   markersLayer.clearLayers();
-  rendered = [];
+  renderedMarkers = [];
 
-  allRows.forEach(r => {
-    if (!rowMatches(r)) return;
-    const c1 = extractPointCoords(r['Dirección: coordenadas']);
-    const c2 = extractCoordsFromDireccion(r['Dirección']);
-    const c = c1 || c2;
-    if (!c) return;
+  allRows.forEach((row) => {
+    if (!rowMatches(row)) return;
 
-    const tipo = chooseTipo(r);
-    const marker = L.marker([c.lat, c.lon], { icon: markerIcon(getTipoColor(tipo)) });
-    marker.bindPopup(popupHtml(r), { maxWidth: 380 });
+    const coordFromPoint = extractPointCoords(row['Dirección: coordenadas']);
+    const coordFromDireccion = extractCoordsFromDireccion(row['Dirección']);
+    const coords = coordFromPoint || coordFromDireccion;
+    if (!coords) return;
+
+    const tipos = parseJsonishArray(row['Tipo de recurso']);
+    const marker = L.marker([coords.lat, coords.lon], {
+      icon: markerIcon(getTipoColor(tipos[0] || 'Sin tipo'))
+    });
+
+    marker.bindPopup(popupHtml(row), { maxWidth: 400 });
     marker.addTo(markersLayer);
-    rendered.push(marker);
+    renderedMarkers.push(marker);
   });
 
-  if (countEl) countEl.textContent = rendered.length;
+  if (countEl) {
+    countEl.textContent = String(renderedMarkers.length);
+  }
 
-  if (rendered.length > 0) {
-    const group = L.featureGroup(rendered);
-    map.fitBounds(group.getBounds().pad(0.1));
+  if (statusEl) {
+    statusEl.textContent = renderedMarkers.length === 0
+      ? 'No hay recursos con los filtros seleccionados.'
+      : '';
+  }
+
+  if (renderedMarkers.length > 0) {
+    const featureGroup = L.featureGroup(renderedMarkers);
+    map.fitBounds(featureGroup.getBounds().pad(0.1));
   }
 }
 
 function bootstrapFilters(rows) {
   fillSelect(temaEl, uniqueValues(rows, 'Temática'), 'Todas');
-  fillSelect(zonaEl, uniqueValues(rows, 'Zona Accción'), 'Todas');
-  fillSelect(tipoEl, uniqueValues(rows, 'Tipo de recurso'), 'Todos');
   fillSelect(poblacionEl, uniqueValues(rows, 'Población diana'), 'Todas');
+  fillSelect(tipoEl, uniqueValues(rows, 'Tipo de recurso'), 'Todos');
+  fillSelect(zonaEl, uniqueValues(rows, 'Zona Accción'), 'Todas');
 }
 
-[qEl, temaEl, zonaEl, tipoEl, poblacionEl].filter(Boolean).forEach(el => {
+[qEl, temaEl, poblacionEl, tipoEl, zonaEl].filter(Boolean).forEach((el) => {
   el.addEventListener('input', render);
   el.addEventListener('change', render);
 });
@@ -224,9 +281,9 @@ if (resetEl) {
   resetEl.addEventListener('click', () => {
     if (qEl) qEl.value = '';
     if (temaEl) temaEl.value = '';
-    if (zonaEl) zonaEl.value = '';
-    if (tipoEl) tipoEl.value = '';
     if (poblacionEl) poblacionEl.value = '';
+    if (tipoEl) tipoEl.value = '';
+    if (zonaEl) zonaEl.value = '';
     render();
   });
 }
@@ -235,14 +292,14 @@ Papa.parse('./Instituciones.csv', {
   header: true,
   skipEmptyLines: true,
   download: true,
-  complete: (res) => {
-    allRows = res.data || [];
+  complete: (result) => {
+    allRows = result.data || [];
     bootstrapFilters(allRows);
     renderLegend();
     render();
   },
-  error: (err) => {
-    console.error(err);
+  error: () => {
+    if (statusEl) statusEl.textContent = 'No se pudo cargar Instituciones.csv';
     alert('No se pudo leer Instituciones.csv');
   }
 });

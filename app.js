@@ -12,13 +12,14 @@ const tipoEl = document.getElementById('tipo');
 const poblacionEl = document.getElementById('poblacion');
 const resetEl = document.getElementById('reset');
 const countEl = document.getElementById('count');
+const legendItemsEl = document.getElementById('legend-items');
 
 const markersLayer = L.layerGroup().addTo(map);
 
 let allRows = [];
 let rendered = [];
 
-const colorByTema = new Map();
+const colorByTipo = new Map();
 const palette = [
   '#e11d48','#2563eb','#059669','#d97706','#7c3aed',
   '#0ea5e9','#84cc16','#f97316','#14b8a6','#ef4444'
@@ -45,6 +46,7 @@ function uniqueValues(rows, field) {
 }
 
 function fillSelect(select, values, firstLabel) {
+  if (!select) return;
   select.innerHTML = `<option value="">${firstLabel}</option>`;
   values.forEach(v => {
     const o = document.createElement('option');
@@ -84,16 +86,16 @@ function extractCoordsFromDireccion(rawDireccion) {
   return null;
 }
 
-function chooseTema(row) {
-  const temas = parseJsonishArray(row['Temática']);
-  return temas[0] || 'Sin temática';
+function chooseTipo(row) {
+  const tipos = parseJsonishArray(row['Tipo de recurso']);
+  return tipos[0] || 'Sin tipo';
 }
 
-function getColor(tema) {
-  if (!colorByTema.has(tema)) {
-    colorByTema.set(tema, palette[colorByTema.size % palette.length]);
+function getTipoColor(tipo) {
+  if (!colorByTipo.has(tipo)) {
+    colorByTipo.set(tipo, palette[colorByTipo.size % palette.length]);
   }
-  return colorByTema.get(tema);
+  return colorByTipo.get(tipo);
 }
 
 function markerIcon(color) {
@@ -147,11 +149,11 @@ function escapeHtml(s) {
 function escapeAttr(s){ return escapeHtml(s); }
 
 function rowMatches(r) {
-  const q = qEl.value.trim().toLowerCase();
-  const tema = temaEl.value;
-  const zona = zonaEl.value;
-  const tipo = tipoEl.value;
-  const pobl = poblacionEl.value;
+  const q = qEl?.value?.trim().toLowerCase() || '';
+  const tema = temaEl?.value || '';
+  const zona = zonaEl?.value || '';
+  const tipo = tipoEl?.value || '';
+  const pobl = poblacionEl?.value || '';
 
   if (q && !(r['Título'] || '').toLowerCase().includes(q)) return false;
 
@@ -168,6 +170,18 @@ function rowMatches(r) {
   return true;
 }
 
+function renderLegend() {
+  if (!legendItemsEl) return;
+  const tipos = uniqueValues(allRows, 'Tipo de recurso');
+  legendItemsEl.innerHTML = '';
+
+  tipos.forEach(tipo => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="legend-dot" style="background:${getTipoColor(tipo)}"></span><span>${escapeHtml(tipo)}</span>`;
+    legendItemsEl.appendChild(li);
+  });
+}
+
 function render() {
   markersLayer.clearLayers();
   rendered = [];
@@ -179,14 +193,14 @@ function render() {
     const c = c1 || c2;
     if (!c) return;
 
-    const tema = chooseTema(r);
-    const marker = L.marker([c.lat, c.lon], { icon: markerIcon(getColor(tema)) });
+    const tipo = chooseTipo(r);
+    const marker = L.marker([c.lat, c.lon], { icon: markerIcon(getTipoColor(tipo)) });
     marker.bindPopup(popupHtml(r), { maxWidth: 380 });
     marker.addTo(markersLayer);
     rendered.push(marker);
   });
 
-  countEl.textContent = rendered.length;
+  if (countEl) countEl.textContent = rendered.length;
 
   if (rendered.length > 0) {
     const group = L.featureGroup(rendered);
@@ -201,19 +215,21 @@ function bootstrapFilters(rows) {
   fillSelect(poblacionEl, uniqueValues(rows, 'Población diana'), 'Todas');
 }
 
-[qEl, temaEl, zonaEl, tipoEl, poblacionEl].forEach(el => {
+[qEl, temaEl, zonaEl, tipoEl, poblacionEl].filter(Boolean).forEach(el => {
   el.addEventListener('input', render);
   el.addEventListener('change', render);
 });
 
-resetEl.addEventListener('click', () => {
-  qEl.value = '';
-  temaEl.value = '';
-  zonaEl.value = '';
-  tipoEl.value = '';
-  poblacionEl.value = '';
-  render();
-});
+if (resetEl) {
+  resetEl.addEventListener('click', () => {
+    if (qEl) qEl.value = '';
+    if (temaEl) temaEl.value = '';
+    if (zonaEl) zonaEl.value = '';
+    if (tipoEl) tipoEl.value = '';
+    if (poblacionEl) poblacionEl.value = '';
+    render();
+  });
+}
 
 Papa.parse('./Instituciones.csv', {
   header: true,
@@ -222,6 +238,7 @@ Papa.parse('./Instituciones.csv', {
   complete: (res) => {
     allRows = res.data || [];
     bootstrapFilters(allRows);
+    renderLegend();
     render();
   },
   error: (err) => {
